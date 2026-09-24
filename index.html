@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Session Tracker — Tim Difrancesco</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f5f5f0;color:#1a1a1a}
+.header{background:#1a1a1a;color:#fff;padding:24px 32px}
+.header h1{font-size:22px;font-weight:500}
+.header p{font-size:13px;color:#999;margin-top:4px}
+.container{max-width:1000px;margin:0 auto;padding:24px}
+.card{background:#fff;border-radius:10px;border:1px solid #e0e0e0;padding:20px;margin-bottom:16px}
+.metric-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:24px}
+.metric{background:#e8f0fe;border:1px solid #1565c022;border-radius:8px;padding:16px}
+.metric .label{font-size:11px;color:#888;text-transform:uppercase;letter-spacing:.5px}
+.metric .value{font-size:24px;font-weight:500;margin-top:4px}
+.metric .sub{font-size:12px;color:#999;margin-top:2px}
+table{width:100%;border-collapse:collapse;font-size:14px}
+th{text-align:left;padding:10px 12px;border-bottom:2px solid #e0e0e0;font-weight:500;color:#666;font-size:11px;text-transform:uppercase;letter-spacing:.5px}
+td{padding:10px 12px;border-bottom:1px solid #f0f0f0}
+tr:hover td{background:#fafaf8}
+tfoot td{font-weight:500;border-top:2px solid #ccc;background:#fafaf8}
+.chart-wrap{position:relative;height:300px;margin:12px 0}
+.section-title{font-size:18px;font-weight:500;margin:32px 0 16px;padding-bottom:8px;border-bottom:1px solid #e0e0e0}
+.section-title:first-of-type{margin-top:0}
+.year-row td{font-weight:500;font-size:15px;background:#e8f0fe}
+.btn{padding:8px 16px;border-radius:8px;border:1px solid #ddd;background:#fff;cursor:pointer;font-size:13px;font-weight:500}
+.btn:hover{background:#f5f5f0}
+.right{text-align:right}
+.month-row{cursor:pointer;user-select:none}
+.month-row td:first-child::before{content:'▸ ';color:#1565c0;font-size:12px}
+.month-row.open td:first-child::before{content:'▾ '}
+.breakdown-row{display:none}
+.breakdown-row.visible{display:table-row}
+.breakdown-row td{padding:6px 12px 6px 32px;font-size:13px;color:#555;border-bottom:1px solid #f5f5f0;background:#fafaf8}
+.breakdown-row td:first-child{color:#888}
+.svc-bar{display:inline-block;height:14px;background:#1565c033;border-radius:3px;margin-right:8px;vertical-align:middle;min-width:2px}
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>Tim Difrancesco — Session tracker</h1>
+  <p>TD Athletes Edge | Sessions from Square Bookings API | Revenue based on session rates</p>
+</div>
+<div class="container">
+
+  <div class="metric-grid" id="metrics"></div>
+
+  <h2 class="section-title">Yearly summary</h2>
+  <div class="card">
+    <table>
+      <thead><tr><th>Year</th><th class="right">Sessions</th><th class="right">Hours</th><th class="right">Revenue</th><th class="right">Avg sessions/mo</th><th class="right">Avg hrs/mo</th></tr></thead>
+      <tbody id="yearBody"></tbody>
+    </table>
+  </div>
+
+  <h2 class="section-title">Monthly sessions</h2>
+  <div class="card">
+    <div class="chart-wrap"><canvas id="sessionChart"></canvas></div>
+  </div>
+
+  <h2 class="section-title">Monthly revenue</h2>
+  <div class="card">
+    <div class="chart-wrap"><canvas id="revenueChart"></canvas></div>
+  </div>
+
+  <h2 class="section-title">Monthly detail</h2>
+  <p style="font-size:13px;color:#888;margin-bottom:12px">Click a month to see the session breakdown by service type</p>
+  <div class="card">
+    <table>
+      <thead><tr><th>Month</th><th class="right">Sessions</th><th class="right">Hours</th><th class="right">Revenue</th></tr></thead>
+      <tbody id="monthBody"></tbody>
+      <tfoot id="monthFoot"></tfoot>
+    </table>
+  </div>
+  <div style="margin:8px 0 32px"><button class="btn" onclick="exportCSV()">Export as CSV</button></div>
+</div>
+
+<script>
+const DATA = [{"m":"2025-06","s":26,"min":945,"r":347000},{"m":"2025-07","s":77,"min":2970,"r":1096000},{"m":"2025-08","s":90,"min":3585,"r":1297000},{"m":"2025-09","s":83,"min":3210,"r":1161000},{"m":"2025-10","s":67,"min":2655,"r":949000},{"m":"2025-11","s":66,"min":2745,"r":988000},{"m":"2025-12","s":57,"min":2280,"r":818000},{"m":"2026-01","s":34,"min":1365,"r":492000},{"m":"2026-02","s":25,"min":1005,"r":364000},{"m":"2026-03","s":19,"min":795,"r":285000},{"m":"2026-04","s":33,"min":1455,"r":522000},{"m":"2026-05","s":88,"min":4230,"r":1202000},{"m":"2026-06","s":120,"min":5040,"r":1809000},{"m":"2026-07","s":138,"min":5925,"r":2118000},{"m":"2026-08","s":146,"min":6390,"r":2284000},{"m":"2026-09","s":82,"min":3615,"r":1294000}];
+const YEARS = {"2025":{"s":466,"min":18390,"r":6656000,"months":7},"2026":{"s":685,"min":29820,"r":10370000,"months":9}};
+
+const BREAKDOWN = {"2025-06":[{"n":"Orthopedic Massage","s":23,"min":810,"r":293000},{"n":"Orthopedic Massage (Initial)","s":3,"min":135,"r":54000}],"2025-07":[{"n":"Orthopedic Massage","s":32,"min":1155,"r":417000},{"n":"Bodywork & Exercise","s":30,"min":1155,"r":415000},{"n":"Bodywork & Exercise (Initial)","s":8,"min":360,"r":144000},{"n":"Orthopedic Massage (Initial)","s":6,"min":270,"r":108000},{"n":"Gym Assessment","s":1,"min":30,"r":12000}],"2025-08":[{"n":"Bodywork & Exercise","s":75,"min":3000,"r":1075000},{"n":"Orthopedic Massage","s":9,"min":315,"r":114000},{"n":"Bodywork & Exercise (Initial)","s":6,"min":270,"r":108000}],"2025-09":[{"n":"Bodywork & Exercise","s":78,"min":3000,"r":1078000},{"n":"Bodywork & Exercise (Initial)","s":4,"min":180,"r":72000},{"n":"Orthopedic Massage","s":1,"min":30,"r":11000}],"2025-10":[{"n":"Bodywork & Exercise","s":60,"min":2355,"r":845000},{"n":"Bodywork & Exercise (Initial)","s":4,"min":180,"r":72000},{"n":"Performance Score Test","s":2,"min":90,"r":20000},{"n":"Gym Assessment","s":1,"min":30,"r":12000}],"2025-11":[{"n":"Bodywork & Exercise","s":61,"min":2550,"r":911000},{"n":"Bodywork & Exercise (Initial)","s":3,"min":135,"r":54000},{"n":"Gym Assessment","s":1,"min":30,"r":12000},{"n":"Orthopedic Massage","s":1,"min":30,"r":11000}],"2025-12":[{"n":"Bodywork & Exercise","s":49,"min":1965,"r":704000},{"n":"Gym Assessment","s":4,"min":120,"r":48000},{"n":"1-on-1 Movement Breakout","s":3,"min":135,"r":48000},{"n":"Golf Performance","s":1,"min":60,"r":18000}],"2026-01":[{"n":"Bodywork & Exercise","s":19,"min":735,"r":264000},{"n":"1-on-1 Movement Breakout","s":9,"min":405,"r":144000},{"n":"Gym Assessment","s":3,"min":90,"r":36000},{"n":"Performance Score Test","s":1,"min":60,"r":18000},{"n":"Phone Consult","s":1,"min":30,"r":12000},{"n":"Bodywork & Exercise (Initial)","s":1,"min":45,"r":18000}],"2026-02":[{"n":"1-on-1 Movement Breakout","s":17,"min":765,"r":272000},{"n":"Bodywork & Exercise","s":4,"min":120,"r":44000},{"n":"Gym Assessment","s":4,"min":120,"r":48000}],"2026-03":[{"n":"1-on-1 Movement Breakout","s":15,"min":675,"r":240000},{"n":"Bodywork & Exercise","s":3,"min":90,"r":33000},{"n":"Gym Assessment","s":1,"min":30,"r":12000}],"2026-04":[{"n":"1-on-1 Movement Breakout","s":25,"min":1125,"r":400000},{"n":"Bodywork & Exercise","s":5,"min":225,"r":80000},{"n":"Gym Assessment","s":2,"min":60,"r":24000},{"n":"Bodywork & Exercise (Initial)","s":1,"min":45,"r":18000}],"2026-05":[{"n":"1-on-1 Movement Breakout","s":60,"min":2670,"r":960000},{"n":"Bodywork & Exercise","s":14,"min":510,"r":184000},{"n":"Other","s":10,"min":885,"r":0},{"n":"Gym Assessment","s":2,"min":60,"r":24000},{"n":"Orientation","s":1,"min":60,"r":16000},{"n":"Bodywork & Exercise (Initial)","s":1,"min":45,"r":18000}],"2026-06":[{"n":"1-on-1 Movement Breakout","s":67,"min":3015,"r":1072000},{"n":"Bodywork & Exercise","s":47,"min":1800,"r":647000},{"n":"Gym Assessment","s":3,"min":90,"r":36000},{"n":"Bodywork & Exercise (Initial)","s":3,"min":135,"r":54000}],"2026-07":[{"n":"1-on-1 Movement Breakout","s":99,"min":4455,"r":1584000},{"n":"Bodywork & Exercise","s":36,"min":1350,"r":486000},{"n":"Bodywork & Exercise (Initial)","s":2,"min":90,"r":36000},{"n":"Gym Assessment","s":1,"min":30,"r":12000}],"2026-08":[{"n":"1-on-1 Movement Breakout","s":111,"min":4995,"r":1776000},{"n":"Bodywork & Exercise","s":30,"min":1200,"r":430000},{"n":"Bodywork & Exercise (Initial)","s":3,"min":135,"r":54000},{"n":"Gym Assessment","s":2,"min":60,"r":24000}],"2026-09":[{"n":"1-on-1 Movement Breakout","s":67,"min":3015,"r":1072000},{"n":"Bodywork & Exercise","s":10,"min":420,"r":150000},{"n":"Gym Assessment","s":3,"min":90,"r":36000},{"n":"1-on-1 Movement Breakout (Initial)","s":1,"min":45,"r":18000},{"n":"Bodywork & Exercise (Initial)","s":1,"min":45,"r":18000}]};
+
+function fmt(cents){if(cents===0)return'—';return'$'+(cents/100).toLocaleString('en-US',{minimumFractionDigits:0,maximumFractionDigits:0})}
+
+const f24=DATA;
+
+// Metrics
+const totalS=f24.reduce((a,d)=>a+d.s,0);
+const totalMin=f24.reduce((a,d)=>a+d.min,0);
+const totalR=DATA.reduce((a,d)=>a+d.r,0);
+const activeMo=f24.filter(d=>d.s>0).length;
+const r6=f24.slice(-6);
+const r6S=r6.reduce((a,d)=>a+d.s,0);
+const r6R=r6.reduce((a,d)=>a+d.r,0);
+
+document.getElementById('metrics').innerHTML=`
+  <div class="metric"><div class="label">Total sessions</div><div class="value">${totalS.toLocaleString()}</div><div class="sub">Jun 2025 – Sep 2026</div></div>
+  <div class="metric"><div class="label">Total hours</div><div class="value">${Math.round(totalMin/60).toLocaleString()}</div><div class="sub">${Math.round(totalMin/60/activeMo)} hrs/mo avg</div></div>
+  <div class="metric"><div class="label">Total revenue</div><div class="value">${fmt(totalR)}</div><div class="sub">Tim's services only</div></div>
+  <div class="metric"><div class="label">Last 6mo sessions</div><div class="value">${r6S.toLocaleString()}</div><div class="sub">${Math.round(r6S/6)}/mo avg</div></div>
+  <div class="metric"><div class="label">Last 6mo revenue</div><div class="value">${fmt(r6R)}</div><div class="sub">${fmt(Math.round(r6R/6))}/mo avg</div></div>
+`;
+
+// Yearly table
+let yearHtml='';
+for(const[y,d]of Object.entries(YEARS).sort()){
+  if(d.s===0&&d.r===0)continue;
+  const mo=d.months||1;
+  yearHtml+=`<tr class="year-row"><td>${y}</td><td class="right">${d.s.toLocaleString()}</td><td class="right">${Math.round(d.min/60).toLocaleString()}</td><td class="right">${fmt(d.r)}</td><td class="right">${d.s>0?Math.round(d.s/mo):'—'}</td><td class="right">${d.min>0?Math.round(d.min/60/mo):'—'}</td></tr>`;
+}
+document.getElementById('yearBody').innerHTML=yearHtml;
+
+// Monthly charts
+const labels=f24.map(d=>{const[y,mo]=d.m.split('-');return new Date(y,mo-1).toLocaleDateString('en-US',{month:'short',year:'2-digit'})});
+
+new Chart(document.getElementById('sessionChart'),{
+  type:'bar',
+  data:{labels,datasets:[{data:f24.map(d=>d.s),backgroundColor:'#1565c0',borderRadius:4}]},
+  options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{ticks:{autoSkip:false,maxRotation:45}}}}
+});
+
+new Chart(document.getElementById('revenueChart'),{
+  type:'bar',
+  data:{labels,datasets:[{data:f24.map(d=>Math.round(d.r/100)),backgroundColor:'#2e7d32',borderRadius:4}]},
+  options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{ticks:{autoSkip:false,maxRotation:45}},y:{ticks:{callback:v=>'$'+v.toLocaleString()}}}}
+});
+
+// Monthly table with clickable breakdown
+const svcColors={'Bodywork & Exercise':'#1565c0','Bodywork & Exercise (Initial)':'#42a5f5','Orthopedic Massage':'#7e57c2','Orthopedic Massage (Initial)':'#b39ddb','1-on-1 Movement Breakout':'#2e7d32','1-on-1 Movement Breakout (Initial)':'#66bb6a','Gym Assessment':'#e67e22','Performance Score Test':'#d4a843','Orientation':'#78909c','Golf Performance':'#26a69a','Phone Consult':'#8d6e63','Other':'#999'};
+let ts=0,tm=0,tr=0;
+let monthHtml='';
+for(const d of f24){
+  ts+=d.s;tm+=d.min;tr+=d.r;
+  const[y,mo]=d.m.split('-');
+  const label=new Date(y,mo-1).toLocaleDateString('en-US',{month:'long',year:'numeric'});
+  monthHtml+=`<tr class="month-row" data-toggle="${d.m}"><td>${label}</td><td class="right">${d.s}</td><td class="right">${Math.round(d.min/60)}h</td><td class="right">${fmt(d.r)}</td></tr>`;
+  const bd=BREAKDOWN[d.m]||[];
+  const maxS=bd.length?bd[0].s:1;
+  for(const svc of bd){
+    const barW=Math.max(2,Math.round(svc.s/maxS*120));
+    const color=svcColors[svc.n]||'#999';
+    monthHtml+=`<tr class="breakdown-row" data-month="${d.m}"><td><span class="svc-bar" style="width:${barW}px;background:${color}55"></span>${svc.n}</td><td class="right">${svc.s} sessions</td><td class="right">${Math.round(svc.min/60)}h</td><td class="right">${svc.r?fmt(svc.r):'—'}</td></tr>`;
+  }
+}
+document.getElementById('monthBody').innerHTML=monthHtml;
+document.getElementById('monthFoot').innerHTML=`<tr><td>Total</td><td class="right">${ts.toLocaleString()}</td><td class="right">${Math.round(tm/60).toLocaleString()}h</td><td class="right">${fmt(tr)}</td></tr>`;
+
+function toggleBreakdown(month){
+  const rows=document.querySelectorAll(`.breakdown-row[data-month="${month}"]`);
+  const parentRow=document.querySelector(`.month-row[data-toggle="${month}"]`);
+  parentRow.classList.toggle('open');
+  rows.forEach(r=>r.classList.toggle('visible'));
+}
+
+document.getElementById('monthBody').addEventListener('click',function(e){
+  const row=e.target.closest('.month-row[data-toggle]');
+  if(row)toggleBreakdown(row.dataset.toggle);
+});
+
+function exportCSV(){
+  let csv='Month,Sessions,Hours,Revenue\n';
+  for(const d of f24)csv+=d.m+','+d.s+','+(d.min/60).toFixed(1)+','+(d.r/100).toFixed(2)+'\n';
+  csv+='\nMonth,Service,Sessions,Hours\n';
+  for(const d of f24){
+    const bd=BREAKDOWN[d.m]||[];
+    for(const svc of bd)csv+=d.m+','+svc.n+','+svc.s+','+(svc.min/60).toFixed(1)+'\n';
+  }
+  const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));a.download='tim-sessions.csv';a.click();
+}
+</script>
+</body>
+</html>
